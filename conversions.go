@@ -155,7 +155,7 @@ func (v *ToAvroVisitor) Primitive(p PrimitiveType) avro.Schema {
 	var err error
 	var primitiveSchema avro.Schema
 
-	switch p.(type) {
+	switch p := p.(type) {
 	case BinaryType:
 		primitiveSchema = avro.NewPrimitiveSchema(avro.Bytes, nil)
 	case BooleanType:
@@ -187,11 +187,9 @@ func (v *ToAvroVisitor) Primitive(p PrimitiveType) avro.Schema {
 		})
 		primitiveSchema = avro.NewPrimitiveSchema(avro.Long, avro.NewPrimitiveLogicalSchema(avro.TimestampMillis), opt)
 	case FixedType:
-		fixed := p.(FixedType)
-		primitiveSchema, err = avro.NewFixedSchema("fixed", "", fixed.len, nil)
+		primitiveSchema, err = avro.NewFixedSchema("fixed", "", p.len, nil)
 	case DecimalType:
-		decimal := p.(DecimalType)
-		primitiveSchema = avro.NewPrimitiveSchema(avro.Bytes, avro.NewDecimalLogicalSchema(decimal.precision, decimal.scale))
+		primitiveSchema = avro.NewPrimitiveSchema(avro.Bytes, avro.NewDecimalLogicalSchema(p.precision, p.scale))
 	default:
 		panic(fmt.Sprintf("unexpected iceberg.PrimitiveType: %#v", p))
 	}
