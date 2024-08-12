@@ -613,6 +613,7 @@ var PrimitiveTypes = struct {
 	String      PrimitiveType
 	Binary      PrimitiveType
 	UUID        PrimitiveType
+	Fixed       PrimitiveType
 }{
 	Bool:        BooleanType{},
 	Int32:       Int32Type{},
@@ -626,4 +627,5 @@ var PrimitiveTypes = struct {
 	String:      StringType{},
 	Binary:      BinaryType{},
 	UUID:        UUIDType{},
+	Fixed:       FixedType{},
 }
