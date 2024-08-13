@@ -113,14 +113,9 @@ func (v *ToAvroVisitor) Field(field NestedField, fieldResult avro.Schema) avro.S
 }
 
 func (v *ToAvroVisitor) List(list ListType, elemResult avro.Schema) avro.Schema {
-	id, err := v.fieldIDs.Peek()
-	if err != nil {
-		panic(err)
-	}
-
 	opts := []avro.SchemaOption{
 		avro.WithProps(map[string]any{
-			"element-id": fmt.Sprintf("%d", id),
+			"element-id": list.ElementID,
 		}),
 	}
 
