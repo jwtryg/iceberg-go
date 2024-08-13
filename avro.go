@@ -46,18 +46,27 @@ func AvroToIceberg(schema avro.Schema) (*Schema, error) {
 // of a null schema and another schema.
 // Returns the resolved (or unwrapped) avro type,
 // a flag indicating if the type is required, and an error.
-func resolveUnion(avsc *avro.UnionSchema) (avro.Schema, bool, error) {
-	switch len(avsc.Types()) {
+func resolveUnion(avsc avro.Schema) (avro.Schema, bool, error) {
+	var union *avro.UnionSchema
+	var ok bool
+	required := true
+
+	if union, ok = avsc.(*avro.UnionSchema); !ok {
+		return avsc, required, nil
+	}
+
+	types := union.Types()
+	switch len(types) {
 	case 0:
 		return nil, false, errors.New("empty union schema")
 	case 1:
-		return avsc.Types()[0], true, nil
+		return types[0], true, nil
 	case 2:
-		if avsc.Types()[0].Type() == avro.Null {
-			return avsc.Types()[1], false, nil
+		if types[0].Type() == avro.Null {
+			return types[1], false, nil
 		}
-		if avsc.Types()[1].Type() == avro.Null {
-			return avsc.Types()[0], false, nil
+		if types[1].Type() == avro.Null {
+			return types[0], false, nil
 		}
 		return nil, false, errors.New("invalid union schema")
 	default:
@@ -69,33 +78,33 @@ type toIcebergConverter struct {
 	idCounter int
 }
 
-func (c *toIcebergConverter) getElementId(avsc *avro.ArraySchema) int {
+func (c *toIcebergConverter) getElementID(avsc *avro.ArraySchema) int {
 	if elemID := avsc.Prop(ELEMENT_ID_PROP); elemID != nil {
-		return elemID.(int)
+		return int(elemID.(float64))
 	} else {
 		return c.allocateId()
 	}
 }
 
-func (c *toIcebergConverter) getKeyId(avsc *avro.MapSchema) int {
+func (c *toIcebergConverter) getKeyID(avsc *avro.MapSchema) int {
 	if keyID := avsc.Prop(KEY_ID_PROP); keyID != nil {
-		return keyID.(int)
+		return int(keyID.(float64))
 	} else {
 		return c.allocateId()
 	}
 }
 
-func (c *toIcebergConverter) getValueId(avsc *avro.MapSchema) int {
+func (c *toIcebergConverter) getValueID(avsc *avro.MapSchema) int {
 	if valueID := avsc.Prop(VALUE_ID_PROP); valueID != nil {
-		return valueID.(int)
+		return int(valueID.(float64))
 	} else {
 		return c.allocateId()
 	}
 }
 
-func (c *toIcebergConverter) getId(field *avro.Field) int {
+func (c *toIcebergConverter) getFieldID(field *avro.Field) int {
 	if fieldID := field.Prop(FIELD_ID_PROP); fieldID != nil {
-		return fieldID.(int)
+		return int(fieldID.(float64))
 	} else {
 		return c.allocateId()
 	}
@@ -111,12 +120,13 @@ func (c *toIcebergConverter) convertSchema(avsc avro.Schema) (Type, error) {
 	var err error
 	var converted Type
 
-	typ := avsc.Type()
-	if logsc, ok := avsc.(avro.LogicalSchema); ok {
-		return c.convertLogicalSchema(typ, logsc.Type())
+	if logtyp, ok := avsc.(avro.LogicalTypeSchema); ok {
+		if logsc := logtyp.Logical(); logsc != nil {
+			return c.convertLogicalSchema(avsc, logsc)
+		}
 	}
 
-	switch typ {
+	switch avsc.Type() {
 	case avro.Boolean:
 		converted = BooleanType{}
 	case avro.Bytes:
@@ -142,7 +152,7 @@ func (c *toIcebergConverter) convertSchema(avsc avro.Schema) (Type, error) {
 	case avro.Record:
 		converted, err = c.convertRecord(avsc.(*avro.RecordSchema))
 	default:
-		err = fmt.Errorf("unexpected avro.Type: %#v", typ)
+		err = fmt.Errorf("unexpected avro.Type: %#v", avsc.Type())
 	}
 
 	if err != nil {
@@ -152,74 +162,167 @@ func (c *toIcebergConverter) convertSchema(avsc avro.Schema) (Type, error) {
 	return converted, nil
 }
 
-func (c *toIcebergConverter) convertField(field *avro.Field) (NestedField, error) {
-	var err error
-	var typ Type
-	var required bool
-
-	avsc := field.Type()
-	if union, ok := avsc.(*avro.UnionSchema); ok {
-		if avsc, required, err = resolveUnion(union); err != nil {
-			return NestedField{}, err
-		}
-	}
-
-	// TODO -- what to do about field ID? Should they be required as in pyIceberg?
-	// Should we generate them as in java? Something else?
-
-	if typ, err = c.convertSchema(avsc); err != nil {
-		return NestedField{}, err
-	}
-
-	return NestedField{
-		Type:           typ,
-		ID:             0,
-		Name:           "",
-		Required:       required,
-		Doc:            "",
-		InitialDefault: nil,
-		WriteDefault:   nil,
-	}, nil
-}
-
-func (c *toIcebergConverter) convertArray(avsc *avro.ArraySchema) (Type, error) {
-}
-
-func (c *toIcebergConverter) convertFixed(avsc *avro.FixedSchema) (Type, error) {
-}
-
-func (c *toIcebergConverter) convertMap(avsc *avro.MapSchema) (Type, error) {
-}
-
-func (c *toIcebergConverter) convertRecord(avsc *avro.RecordSchema) (Type, error) {
-}
-
-func (c *toIcebergConverter) convertLogicalSchema(typ avro.Type, logtyp avro.LogicalType) (Type, error) {
+func (c *toIcebergConverter) convertLogicalSchema(avsc avro.Schema, logsc avro.LogicalSchema) (Type, error) {
 	var result Type
-	switch typ {
+	t := avsc.Type()
+	lt := logsc.Type()
+
+	switch t {
 	case avro.Fixed:
-		if logtyp == avro.UUID {
+		if lt == avro.UUID {
 			result = UUIDType{}
 		}
+		if lt == avro.Decimal {
+			result = DecimalType{
+				precision: avsc.(*avro.FixedSchema).Prop("precision").(int),
+				scale:     avsc.(*avro.FixedSchema).Prop("scale").(int),
+			}
+		}
 	case avro.Int:
-		if logtyp == avro.Date {
+		if lt == avro.Date {
 			result = DateType{}
 		}
 	case avro.Long:
 		{
-			if logtyp == avro.TimeMicros {
+			if lt == avro.TimeMicros {
 				result = TimeType{}
 			}
-			if logtyp == avro.TimestampMicros {
+			if lt == avro.TimestampMicros {
 				result = TimestampType{}
 			}
 		}
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf("unsupported logical type: %v:%v", typ, logtyp)
+		return nil, fmt.Errorf("unsupported logical type: %v:%v", t, lt)
 	}
+
 	return result, nil
+}
+
+func (c *toIcebergConverter) convertArray(avsc *avro.ArraySchema) (Type, error) {
+	var err error
+	var elem Type
+	var itemsc avro.Schema
+	var required bool
+
+	if avsc.Prop(LOGICAL_TYPE_PROP) == "map" {
+		return c.convertLogicalMap(avsc)
+	}
+
+	if itemsc, required, err = resolveUnion(avsc.Items()); err != nil {
+		return nil, err
+	}
+
+	if elem, err = c.convertSchema(itemsc); err != nil {
+		return nil, err
+	}
+
+	return &ListType{
+		ElementID:       c.getElementID(avsc),
+		Element:         elem,
+		ElementRequired: required,
+	}, nil
+}
+
+func (c *toIcebergConverter) convertFixed(avsc *avro.FixedSchema) (Type, error) {
+	return FixedType{
+		len: avsc.Size(),
+	}, nil
+
+}
+
+func (c *toIcebergConverter) convertField(field *avro.Field) (NestedField, error) {
+	var err error
+	var avsc avro.Schema
+	var typ Type
+	var required bool
+
+	if avsc, required, err = resolveUnion(field.Type()); err != nil {
+		return NestedField{}, err
+	}
+
+	if typ, err = c.convertSchema(avsc); err != nil {
+		return NestedField{}, err
+	}
+
+	return NestedField{
+		Type:         typ,
+		ID:           c.getFieldID(field),
+		Name:         field.Name(),
+		Required:     required,
+		Doc:          field.Doc(),
+		WriteDefault: field.Default(),
+	}, nil
+}
+
+func (c *toIcebergConverter) convertLogicalMap(avsc *avro.ArraySchema) (Type, error) {
+	var err error
+	var key NestedField
+	var value NestedField
+
+	if avsc.Items().Type() != avro.Record {
+		return nil, fmt.Errorf("unsupported logical map type: %v", avsc.Items().Type())
+	}
+
+	fields := avsc.Items().(*avro.RecordSchema).Fields()
+	if len(fields) != 2 {
+		return nil, fmt.Errorf("logical map must have 2 fields, but has %d", len(fields))
+	}
+
+	if key, err = c.convertField(fields[0]); err != nil {
+		return nil, err
+	}
+
+	if value, err = c.convertField(fields[1]); err != nil {
+		return nil, err
+	}
+
+	return &MapType{
+		KeyID:         key.ID,
+		KeyType:       key.Type,
+		ValueID:       value.ID,
+		ValueType:     value.Type,
+		ValueRequired: value.Required,
+	}, nil
+}
+
+func (c *toIcebergConverter) convertMap(avsc *avro.MapSchema) (Type, error) {
+	var err error
+	var valueType Type
+	var valuesc avro.Schema
+	var required bool
+
+	if valuesc, required, err = resolveUnion(avsc.Values()); err != nil {
+		return nil, err
+	}
+
+	if valueType, err = c.convertSchema(valuesc); err != nil {
+		return nil, err
+	}
+
+	return &MapType{
+		KeyID:         c.getKeyID(avsc),
+		KeyType:       StringType{},
+		ValueID:       c.getValueID(avsc),
+		ValueType:     valueType,
+		ValueRequired: required,
+	}, nil
+}
+
+func (c *toIcebergConverter) convertRecord(avsc *avro.RecordSchema) (Type, error) {
+	var err error
+
+	fields := make([]NestedField, len(avsc.Fields()))
+	for i, field := range avsc.Fields() {
+		if fields[i], err = c.convertField(field); err != nil {
+			return nil, err
+		}
+	}
+
+	return &StructType{
+		FieldList: fields,
+	}, nil
 }
 
 // Convert an Iceberg schema into an Avro schema.
