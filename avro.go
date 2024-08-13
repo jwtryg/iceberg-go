@@ -167,6 +167,10 @@ func (v *ToAvroVisitor) Primitive(p PrimitiveType) avro.Schema {
 		primitiveSchema = avro.NewPrimitiveSchema(avro.String, nil)
 	case UUIDType:
 		primitiveSchema, err = avro.NewFixedSchema("uuid_fixed", "", 16, avro.NewPrimitiveLogicalSchema(avro.UUID))
+	case FixedType:
+		primitiveSchema, err = avro.NewFixedSchema("fixed", "", p.len, nil)
+	case DecimalType:
+		primitiveSchema = avro.NewPrimitiveSchema(avro.Bytes, avro.NewDecimalLogicalSchema(p.precision, p.scale))
 	case DateType:
 		primitiveSchema = avro.NewPrimitiveSchema(avro.Int, avro.NewPrimitiveLogicalSchema(avro.Date))
 	case TimeType:
@@ -181,10 +185,6 @@ func (v *ToAvroVisitor) Primitive(p PrimitiveType) avro.Schema {
 			ADJUST_TO_UTC_PROP: true,
 		})
 		primitiveSchema = avro.NewPrimitiveSchema(avro.Long, avro.NewPrimitiveLogicalSchema(avro.TimestampMillis), opt)
-	case FixedType:
-		primitiveSchema, err = avro.NewFixedSchema("fixed", "", p.len, nil)
-	case DecimalType:
-		primitiveSchema = avro.NewPrimitiveSchema(avro.Bytes, avro.NewDecimalLogicalSchema(p.precision, p.scale))
 	default:
 		panic(fmt.Sprintf("unexpected iceberg.PrimitiveType: %#v", p))
 	}
