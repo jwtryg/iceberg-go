@@ -365,11 +365,11 @@ func (v *ToAvroVisitor) Struct(st StructType, fieldResults []avro.Schema) avro.S
 	}
 
 	stfields := st.Fields()
-	fields := make([]*avro.Field, len(fieldResults))
+	fields := make([]*avro.Field, 0, len(fieldResults))
 	for i, fieldResult := range fieldResults {
 		stfield := stfields[i]
 		props := map[string]any{
-			"field-id": fmt.Sprintf("%d", stfield.ID),
+			FIELD_ID_PROP: stfield.ID,
 		}
 
 		fieldname := stfield.Name
@@ -416,7 +416,7 @@ func (v *ToAvroVisitor) Field(field NestedField, fieldResult avro.Schema) avro.S
 func (v *ToAvroVisitor) List(list ListType, elemResult avro.Schema) avro.Schema {
 	opts := []avro.SchemaOption{
 		avro.WithProps(map[string]any{
-			"element-id": list.ElementID,
+			ELEMENT_ID_PROP: list.ElementID,
 		}),
 	}
 
