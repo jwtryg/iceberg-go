@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var avscManifestFile = avro.MustParse(`{
+var avroManifestFile = avro.MustParse(`{
 	"type": "record",
 	"name": "manifest_file",
 	"fields": [
@@ -80,7 +80,7 @@ var avscManifestFile = avro.MustParse(`{
 	]
 }`)
 
-var icebscgManifestFile = iceberg.NewSchema(0, []iceberg.NestedField{
+var icebergManifestFile = iceberg.NewSchema(0, []iceberg.NestedField{
 	{ID: 500, Name: "manifest_path", Type: iceberg.StringType{}, Required: true, Doc: "Location URI with FS scheme"},
 	{ID: 501, Name: "manifest_length", Type: iceberg.Int64Type{}, Required: true, Doc: "Total file size in bytes"},
 	{ID: 502, Name: "partition_spec_id", Type: iceberg.Int32Type{}, Required: true, Doc: "Spec ID used to write"},
@@ -151,16 +151,78 @@ var icebscgManifestFile = iceberg.NewSchema(0, []iceberg.NestedField{
 }...)
 
 func TestAvroManifestToIceberg(t *testing.T) {
-	expected := icebscgManifestFile
-	actual, err := iceberg.AvroToIceberg(avscManifestFile)
+	expected := icebergManifestFile
+	actual, err := iceberg.AvroToIceberg(avroManifestFile)
 	assert.NoError(t, err)
 	assert.Equal(t, expected.ID, actual.ID)
 	assert.Equal(t, expected.Fields(), actual.Fields())
 }
 
 func TestIcebergManifestToAvro(t *testing.T) {
-	expected := avscManifestFile
-	actual, err := iceberg.IcebergToAvro("manifest_file", icebscgManifestFile)
+	expected := avroManifestFile
+	actual, err := iceberg.IcebergToAvro("manifest_file", icebergManifestFile)
 	assert.NoError(t, err)
 	assert.Equal(t, expected.String(), actual.String())
+}
+
+func TestAvroListRequiredPrimitive(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+        "type": "record",
+        "name": "avro_schema",
+        "fields": [
+            {
+                "name": "array_with_string",
+                "type": {
+                    "type": "array",
+                    "items": "string",
+                    "default": [],
+                    "element-id": 101
+                },
+                "field-id": 100
+            }
+        ]
+    }`)
+
+	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:       100,
+		Name:     "array_with_string",
+		Type:     &iceberg.ListType{ElementID: 101, Element: iceberg.StringType{}, ElementRequired: true},
+		Required: true,
+	}}...)
+
+	actualIceberg, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
+	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
+}
+
+func TestAvroListWrappedPrimitive(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+        "type": "record",
+        "name": "avro_schema",
+        "fields": [
+            {
+                "name": "array_with_string",
+                "type": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [],
+                    "element-id": 101
+                },
+                "field-id": 100
+            }
+        ]
+    }`)
+
+	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:       100,
+		Name:     "array_with_string",
+		Type:     &iceberg.ListType{ElementID: 101, Element: iceberg.StringType{}, ElementRequired: true},
+		Required: true,
+	}}...)
+
+	actualIceberg, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
+	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
 }
