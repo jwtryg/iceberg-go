@@ -489,3 +489,28 @@ func TestAvroConvertDecimalType(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expected.Fields(), actual.Fields())
 }
+
+func TestAvroConvertDateType(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "field",
+			"type": {
+				"type": "int", 
+				"logicalType": "date"
+			}
+		}]
+	}`)
+
+	expected := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:       0,
+		Name:     "field",
+		Type:     iceberg.DateType{},
+		Required: true,
+	}}...)
+
+	actual, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expected.Fields(), actual.Fields())
+}
