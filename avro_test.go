@@ -165,22 +165,109 @@ func TestIcebergManifestToAvro(t *testing.T) {
 	assert.Equal(t, expected.String(), actual.String())
 }
 
+// Assign IDs to all fields in the Avro schema
+// in post-order traversal of the schema tree.
+// Further, notice how record names are assigned
+// as "r" followed by the field-id of the record.
+func TestAvroAssignIDs(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [
+			{"name": "field1", "type": "string"},
+			{
+				"name": "field2", 
+				"type": {
+					"type": "record",
+					"name": "record_1",
+					"fields": [
+						{"name": "nested_field1", "type": "int"},
+						{
+							"name": "nested_field2", 
+							"type":  {
+								"type": "array",
+								"items": "long"
+							}
+						},
+						{
+							"name": "nested_field3", 
+							"type": {
+								"type": "map",
+								"values": "string"
+							}
+						}
+					]	
+				}
+			},
+			{"name": "field3", "type": "long"}
+		]
+	}`)
+
+	expected := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [
+			{"name": "field1", "type": "string", "field-id": 0},
+			{
+				"name": "field2", 
+				"type": {
+					"type": "record",
+					"name": "r7",
+					"fields": [
+						{"name": "nested_field1", "type": "int", "field-id": 1},
+						{
+							"name": "nested_field2", 
+							"type":  {
+								"type": "array",
+								"items": "long",
+								"element-id": 2
+							},
+							"field-id": 3
+						},
+						{
+							"name": "nested_field3", 
+							"type": {
+								"type": "map",
+								"values": "string",
+								"key-id": 4, 
+								"value-id": 5
+							},
+							"field-id": 6
+						}
+					]
+				},
+				"field-id": 7
+			},
+			{"name": "field3", "type": "long", "field-id": 8}
+		]
+	}`)
+
+	icebergSchema, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+
+	idx, err := iceberg.IndexByName(icebergSchema)
+	assert.NoError(t, err)
+	_ = idx
+
+	actual, err := iceberg.IcebergToAvro("avro_schema", icebergSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expected.String(), actual.String())
+}
+
 func TestAvroListRequiredPrimitive(t *testing.T) {
 	avroSchema := avro.MustParse(`{
         "type": "record",
         "name": "avro_schema",
-        "fields": [
-            {
-                "name": "array_with_string",
-                "type": {
-                    "type": "array",
-                    "items": "string",
-                    "default": [],
-                    "element-id": 101
-                },
-                "field-id": 100
-            }
-        ]
+        "fields": [{
+			"name": "array_with_string",
+			"type": {
+				"type": "array",
+				"items": "string",
+				"default": [],
+				"element-id": 101
+			},
+			"field-id": 100
+		}]
     }`)
 
 	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
@@ -200,18 +287,16 @@ func TestAvroListWrappedPrimitive(t *testing.T) {
 	avroSchema := avro.MustParse(`{
         "type": "record",
         "name": "avro_schema",
-        "fields": [
-            {
-                "name": "array_with_string",
-                "type": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "default": [],
-                    "element-id": 101
-                },
-                "field-id": 100
-            }
-        ]
+        "fields": [{
+			"name": "array_with_string",
+			"type": {
+				"type": "array",
+				"items": {"type": "string"},
+				"default": [],
+				"element-id": 101
+			},
+			"field-id": 100
+		}]
     }`)
 
 	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
@@ -225,4 +310,182 @@ func TestAvroListWrappedPrimitive(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
 	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
+}
+
+// func TestAvroLogicalMap(t *testing.T) {
+// 	avroSchema := avro.MustParse(`{
+//         "type": "record",
+//         "name": "avro_schema",
+//         "fields": [
+//             {
+//                 "name": "array_with_string",
+//                 "type": {
+//                     "type": "array",
+// 					"logicalType": "map",
+// 					"some-annotation": "some-value",
+//                     "items": {
+// 						"type": "record",
+// 						"name": "k101_v102",
+// 						"fields": [
+// 							{"name": "key", "type": "int", "field-id": 101},
+// 							{"name": "value", "type": "string", "field-id": 102}
+// 						]
+// 					},
+//                     "element-id": 101
+//                 },
+//                 "field-id": 100
+//             }
+//         ]
+//     }`)
+
+// 	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
+// 		ID:   100,
+// 		Name: "array_with_string",
+// 		Type: &iceberg.ListType{
+// 			ElementID: 101,
+// 			Element: &iceberg.MapType{
+// 				KeyID: 101, KeyType: iceberg.Int32Type{},
+// 				ValueID: 102, ValueType: iceberg.StringType{}, ValueRequired: true,
+// 			},
+// 			ElementRequired: true,
+// 		},
+// 	}}...)
+
+// 	actualIceberg, err := iceberg.AvroToIceberg(avroSchema)
+// 	assert.NoError(t, err)
+// 	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
+// 	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
+// }
+
+func TestAvroInvalidUnion(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "union_with_null",
+			"type": ["null", "string", "long"],
+			"field-id": 100
+		}]
+	}`)
+	_, err := iceberg.AvroToIceberg(avroSchema)
+	assert.Error(t, err)
+}
+
+func TestAvroUnionWithDefault(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "union_with_null",
+			"type": ["string", "null"],
+			"default": "empty",
+			"field-id": 100
+		}]
+	}`)
+	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:           100,
+		Name:         "union_with_null",
+		Type:         iceberg.StringType{},
+		Required:     false,
+		WriteDefault: "empty",
+	}}...)
+
+	actualIceberg, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
+	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
+}
+
+func TestAvroMapType(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "map",
+			"type": {
+				"type": "map",
+				"values": ["null", "long"],
+				"key-id": 101,
+				"value-id": 102
+			}
+		}]
+    }`)
+
+	expectedIceberg := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:   0,
+		Name: "map",
+		Type: &iceberg.MapType{
+			KeyID: 101, KeyType: iceberg.StringType{},
+			ValueID: 102, ValueType: iceberg.Int64Type{}, ValueRequired: false,
+		},
+		Required: true,
+	}}...)
+
+	actualIceberg, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedIceberg.ID, actualIceberg.ID)
+	assert.Equal(t, expectedIceberg.Fields(), actualIceberg.Fields())
+}
+
+func TestAvroFixedType(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "field",
+			"type": { "type": "fixed", "name": "fixed", "size": 22 }
+		}]
+	}`)
+
+	expected := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:       0,
+		Name:     "field",
+		Type:     iceberg.FixedTypeOf(22),
+		Required: true,
+	}}...)
+
+	actual, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expected.ID, actual.ID)
+	assert.Equal(t, expected.Fields(), actual.Fields())
+}
+
+func TestAvroConvertNonRecordSchema(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "array",
+        "items": "string",
+        "default": []
+	}`)
+
+	_, err := iceberg.AvroToIceberg(avroSchema)
+	assert.ErrorContains(t, err, "schema must be a record")
+}
+
+func TestAvroConvertDecimalType(t *testing.T) {
+	avroSchema := avro.MustParse(`{
+		"type": "record",
+		"name": "avro_schema",
+		"fields": [{
+			"name": "field",
+			"type": {
+				"type": "fixed", 
+				"name": "fixed",
+				"size": 16,
+				"logicalType": "decimal", 
+				"precision": 20, 
+				"scale": 15
+			}
+		}]
+	}`)
+
+	expected := iceberg.NewSchema(0, []iceberg.NestedField{{
+		ID:       0,
+		Name:     "field",
+		Type:     iceberg.DecimalTypeOf(20, 15),
+		Required: true,
+	}}...)
+
+	actual, err := iceberg.AvroToIceberg(avroSchema)
+	assert.NoError(t, err)
+	assert.Equal(t, expected.Fields(), actual.Fields())
 }
