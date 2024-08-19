@@ -174,8 +174,8 @@ func (c *toIcebergConverter) convertLogicalSchema(avsc avro.Schema, logsc avro.L
 		}
 		if lt == avro.Decimal {
 			result = DecimalType{
-				precision: avsc.(*avro.FixedSchema).Prop("precision").(int),
-				scale:     avsc.(*avro.FixedSchema).Prop("scale").(int),
+				precision: logsc.(*avro.DecimalLogicalSchema).Precision(),
+				scale:     logsc.(*avro.DecimalLogicalSchema).Scale(),
 			}
 		}
 	case avro.Int:
