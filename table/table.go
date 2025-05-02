@@ -19,8 +19,8 @@ package table
 
 import (
 	"context"
-	"fmt"
 	"iter"
+	"log/slog"
 	"runtime"
 	"slices"
 
@@ -196,10 +196,7 @@ func (t Table) doCommit(ctx context.Context, updates []Update, reqs []Requiremen
 		return nil, err
 	}
 
-	if err := deleteOldMetadata(t.fs, t.metadata, newMeta); err != nil {
-		return nil, err
-	}
-
+	deleteOldMetadata(t.fs, t.metadata, newMeta)
 	return New(t.identifier, newMeta, newLoc, t.fs, t.cat), nil
 }
 
@@ -219,7 +216,10 @@ func getFiles(it iter.Seq[MetadataLogEntry]) iter.Seq[string] {
 	}
 }
 
-func deleteOldMetadata(fs io.IO, baseMeta, newMeta Metadata) error {
+// deleteOldMetadata deletes old metadata files if the delete-after-commit
+// property is set to true. If it fails to delete a file, it logs a warning
+// but continues to delete the rest of the files.
+func deleteOldMetadata(fs io.IO, baseMeta, newMeta Metadata) {
 	deleteAfterCommit := newMeta.Properties().GetBool(MetadataDeleteAfterCommitEnabledKey,
 		MetadataDeleteAfterCommitEnabledDefault)
 
@@ -230,12 +230,10 @@ func deleteOldMetadata(fs io.IO, baseMeta, newMeta Metadata) error {
 
 		for _, file := range toRemove {
 			if err := fs.Remove(file); err != nil {
-				return fmt.Errorf("failed to delete old metadata file %s: %w", file, err)
+				slog.Warn("failed to delete old metadata file", "file", file, "err", err)
 			}
 		}
 	}
-
-	return nil
 }
 
 type ScanOption func(*Scan)
