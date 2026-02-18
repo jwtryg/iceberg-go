@@ -54,7 +54,12 @@ const (
 type adlsLocation struct {
 	accountName   string // Azure storage account name
 	containerName string // Container (bucket) name
+	hostname      string // Hostname of the Azure storage account
 	path          string // Object path within the container
+}
+
+func (adls adlsLocation) endpoint() string {
+	return strings.TrimPrefix(adls.hostname, adls.accountName+".")
 }
 
 // createServiceURL creates an Azure blob service URL with the given parameters
@@ -113,6 +118,7 @@ func newAdlsLocation(adlsURI *url.URL) (*adlsLocation, error) {
 	return &adlsLocation{
 		accountName:   accountName,
 		containerName: containerName,
+		hostname:      hostname,
 		path:          path,
 	}, nil
 }
@@ -154,7 +160,7 @@ func createAzureBucket(ctx context.Context, parsed *url.URL, props map[string]st
 		if err != nil {
 			return nil, fmt.Errorf("failed container.NewClientWithSharedKeyCredential: %w", err)
 		}
-	} else if sasToken, ok := adlsSasTokens[location.accountName]; ok {
+	} else if sasToken, ok := adlsSasTokens[location.hostname]; ok {
 		containerURL, err := createContainerURL(location.accountName, protocol, endpoint, sasToken, location.containerName)
 		if err != nil {
 			return nil, err
