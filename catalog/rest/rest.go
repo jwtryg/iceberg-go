@@ -97,9 +97,10 @@ func init() {
 }
 
 type errorResponse struct {
-	Message string `json:"message"`
-	Type    string `json:"type"`
-	Code    int    `json:"code"`
+	Message string              `json:"message"`
+	Type    string              `json:"type"`
+	Code    int                 `json:"code"`
+	Headers map[string][]string `json:"headers"`
 
 	wrapping error
 }
@@ -374,6 +375,14 @@ func handleNon200(rsp *http.Response, override map[int]error) error {
 			e.wrapping = ErrRESTError
 		}
 	}
+
+	// set status code if not set
+	if e.Code == 0 {
+		e.Code = rsp.StatusCode
+	}
+
+	// include any headers
+	e.Headers = rsp.Header
 
 	return e
 }
