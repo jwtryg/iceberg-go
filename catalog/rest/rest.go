@@ -109,7 +109,28 @@ type contextKey string
 
 func (e errorResponse) Unwrap() error { return e.wrapping }
 func (e errorResponse) Error() string {
-	return e.Type + ": " + e.Message
+	b := strings.Builder{}
+
+	b.WriteString(e.Type)
+	if e.Code > 0 {
+		b.WriteString("(" + strconv.Itoa(e.Code) + ")")
+	}
+
+	if len(e.Headers) > 0 {
+		i := 0
+		b.WriteString("[")
+		for k, v := range e.Headers {
+			b.WriteString(k + ": [")
+			b.WriteString(strings.Join(v, ",") + "]")
+			if i > 0 {
+				b.WriteString(",")
+			}
+		}
+		b.WriteString("]")
+	}
+
+	b.WriteString(" : " + e.Message)
+	return b.String()
 }
 
 type identifier struct {
