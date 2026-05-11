@@ -85,6 +85,7 @@ var (
 	ErrAuthorizationExpired = fmt.Errorf("%w: authorization expired", ErrRESTError)
 	ErrServiceUnavailable   = fmt.Errorf("%w: service unavailable", ErrRESTError)
 	ErrServerError          = fmt.Errorf("%w: server error", ErrRESTError)
+	ErrTooManyRequests      = fmt.Errorf("%w: too many requests", ErrRESTError)
 	ErrCommitFailed         = fmt.Errorf("%w: commit failed, refresh and try again", ErrRESTError)
 	ErrCommitStateUnknown   = fmt.Errorf("%w: commit failed due to unknown reason", ErrRESTError)
 	ErrOAuthError           = fmt.Errorf("%w: oauth error", ErrRESTError)
@@ -408,6 +409,8 @@ func handleNon200(rsp *http.Response, override map[int]error) error {
 		e.wrapping = ErrRESTError
 	case 419:
 		e.wrapping = ErrAuthorizationExpired
+	case http.StatusTooManyRequests:
+		e.wrapping = ErrTooManyRequests
 	case http.StatusNotImplemented:
 		e.wrapping = iceberg.ErrNotImplemented
 	case http.StatusServiceUnavailable:
